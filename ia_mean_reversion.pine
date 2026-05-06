@@ -1,0 +1,69 @@
+//@version=5
+indicator("InvestAnswers Mean Reversion", overlay=true, shorttitle="IA MR")
+
+// =========================================================================
+// Inputs
+// =========================================================================
+grp_ma = "Moving Average Settings"
+maLengthInput = input.int(200, title="MA Length", group=grp_ma, minval=1)
+maTypeInput   = input.string("SMA", title="MA Type", options=["SMA", "EMA"], group=grp_ma)
+srcInput      = input.source(close, title="Source", group=grp_ma)
+
+grp_sd = "Standard Deviation Settings"
+sdLengthInput = input.int(200, title="SD Length", group=grp_sd, minval=2, tooltip="Length used for calculating the standard deviation.")
+
+// =========================================================================
+// Functions
+// =========================================================================
+// @function Calculates standard deviation bands around a mean
+// @param src The source series to calculate standard deviation on
+// @param mean The baseline moving average series
+// @param length The lookback period for standard deviation
+// @param mult The multiplier for the standard deviation band
+// @returns A tuple containing the [upper, lower] band values
+f_calc_sd_bands(series float src, series float mean, simple int length, simple float mult) =>
+    float dev = ta.stdev(src, length)
+    float upper = mean + (dev * mult)
+    float lower = mean - (dev * mult)
+    [upper, lower]
+
+// =========================================================================
+// Core Logic
+// =========================================================================
+// Baseline Moving Average
+float baselineMA = na
+if maTypeInput == "SMA"
+    baselineMA := ta.sma(srcInput, maLengthInput)
+else if maTypeInput == "EMA"
+    baselineMA := ta.ema(srcInput, maLengthInput)
+
+// Calculate Standard Deviation Bands
+[upper1, lower1] = f_calc_sd_bands(srcInput, baselineMA, sdLengthInput, 1)
+[upper2, lower2] = f_calc_sd_bands(srcInput, baselineMA, sdLengthInput, 2)
+[upper3, lower3] = f_calc_sd_bands(srcInput, baselineMA, sdLengthInput, 3)
+[upper4, lower4] = f_calc_sd_bands(srcInput, baselineMA, sdLengthInput, 4)
+
+// =========================================================================
+// Visuals
+// =========================================================================
+// Plot Baseline
+plot(baselineMA, color=color.white, linewidth=2, title="Baseline MA")
+
+// Plot Bands
+p_u4 = plot(upper4, color=color.new(color.red, 60), title="Upper 4 SD")
+p_u3 = plot(upper3, color=color.new(color.red, 40), title="Upper 3 SD")
+p_u2 = plot(upper2, color=color.new(color.red, 20), title="Upper 2 SD")
+p_u1 = plot(upper1, color=color.new(color.red, 10), title="Upper 1 SD")
+
+p_l1 = plot(lower1, color=color.new(color.green, 10), title="Lower 1 SD")
+p_l2 = plot(lower2, color=color.new(color.green, 20), title="Lower 2 SD")
+p_l3 = plot(lower3, color=color.new(color.green, 40), title="Lower 3 SD")
+p_l4 = plot(lower4, color=color.new(color.green, 60), title="Lower 4 SD")
+
+// Fill Overbought (Red Zones)
+fill(p_u2, p_u3, color=color.new(color.red, 90), title="Overbought Zone 1 (+2 to +3 SD)")
+fill(p_u3, p_u4, color=color.new(color.red, 80), title="Overbought Zone 2 (+3 to +4 SD)")
+
+// Fill Oversold (Green Zones)
+fill(p_l2, p_l3, color=color.new(color.green, 90), title="Oversold Zone 1 (-2 to -3 SD)")
+fill(p_l3, p_l4, color=color.new(color.green, 80), title="Oversold Zone 2 (-3 to -4 SD)")
