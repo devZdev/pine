@@ -190,15 +190,22 @@ Both files must be present before proceeding.
 
 ---
 
-## Phase 4 — Pine Script generation
+## Phase 4 — Pine Script delivery
 
-**Status: NOT YET BUILT.** This phase will be implemented in a future session.
+**Status: BUILT.** Pine Script files are checked into `tradingview/` — they are the user's final deliverable. There is no Python runtime for this phase. The agent's job here is to **verify the files exist and are syntactically clean**, then point the user to the TradingView setup guide.
 
-**What to do now:** Skip execution. When Phase 4 is built, two files will appear:
-- `tradingview/lib_atr_mean_reversion.pine` — the reusable library script
-- `tradingview/strategy_csp.pine` — the strategy script that fires webhook alerts
+### Verification check
+```bash
+ls -la tradingview/lib_atr_mean_reversion.pine tradingview/strategy_csp.pine tradingview/README_TRADINGVIEW.md && \
+grep -c "^//@version=6" tradingview/lib_atr_mean_reversion.pine tradingview/strategy_csp.pine
+```
+Both files must report `1` for the `//@version=6` count. Missing files = report failure to user.
 
-This section will be updated with exact TradingView load instructions when those files exist.
+### Hand-off to user
+Tell the user:
+> Phase 4 deliverables are at `tradingview/`. Read `tradingview/README_TRADINGVIEW.md` for the full TradingView load procedure — publish the library script first, replace `<USERNAME>` in the strategy with your TradingView handle, then attach the strategy to a BTC or TSLA chart at 5m timeframe. Slack webhook setup is in the same file.
+
+**Do not attempt to load Pine Scripts yourself — only the user can do this through the TradingView UI.**
 
 ---
 

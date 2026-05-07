@@ -187,25 +187,38 @@ Requires Phase 1 parquets at `data/raw/BTC_USD_5m.parquet` and `data/raw/TSLA_5m
 
 ---
 
-## Phase 4 — TradingView Execution Layer (planned)
+## Phase 4 — TradingView Execution Layer (complete)
 
-Agent 4 delivers two Pine Script v6 files:
+Agent 4 delivers two Pine Script v6 files plus a setup guide:
 
-1. **`library()` script** — reusable ATR Trailing Stop and Mean Reversion band functions
-2. **`strategy()` script** — imports the library, implements entry/exit logic, fires webhook alerts
+1. **`tradingview/lib_atr_mean_reversion.pine`** — Pine library exporting:
+   - `atr_trailing_stop(length, multiplier)` — ratcheting Wilder ATR stop
+   - `bollinger_bands(length, mult, src)` — tuple `[upper, lower, percent_b]`
+   - `hurst_rs(length)` — R/S Hurst exponent (native Pine, no DFA)
+   - `regime_label(hurst, lower, upper)` — TRENDING / MEAN_REVERTING / NEUTRAL
 
-Webhook alert payload (JSON):
+2. **`tradingview/strategy_csp.pine`** — Glass Box strategy that imports the library, fires Slack webhook alerts on entry/exit, plots BB / SMA200 / ATR trail / regime HUD.
+
+3. **`tradingview/README_TRADINGVIEW.md`** — setup guide: publishing the library, replacing the `<USERNAME>` import placeholder, attaching to chart, creating Slack webhook, alert wiring, Pro+ plan note.
+
+### Slack webhook payload (Block Kit)
 ```json
 {
-  "symbol": "{{ticker}}",
-  "action": "SELL_PUT",
-  "strike_hint": "{{close}} * 0.95",
-  "expiry": "weekly",
-  "atr": "{{plot_0}}",
-  "regime": "MEAN_REVERTING",
-  "timestamp": "{{time}}"
+  "text": "🔔 SELL_PUT — BTCUSD",
+  "blocks": [
+    {"type": "header", "text": {"type": "plain_text", "text": "📉 Sell Cash-Secured Put — BTCUSD"}},
+    {"type": "section", "fields": [
+      {"type": "mrkdwn", "text": "*Strike Hint:*\n$94250.50"},
+      {"type": "mrkdwn", "text": "*Regime:*\nMEAN_REVERTING"},
+      {"type": "mrkdwn", "text": "*Hurst:*\n0.41"}
+    ]},
+    {"type": "context", "elements": [{"type": "mrkdwn", "text": "Bar time: 2026-05-07 14:32 UTC"}]}
+  ]
 }
 ```
+
+### Why R/S Hurst in Pine, not DFA
+Pine v6's array math is constrained — porting the 512-bar DFA from Phase 1 would be impractical. R/S is a single-window approximation: ~50 lines of native Pine, well-correlated with DFA for regime detection at the timescales the strategy trades. The Python research stack still uses DFA for backtesting accuracy.
 
 ---
 
@@ -225,6 +238,6 @@ If this session is interrupted, the next session should:
 1. Read this file to understand system state and conventions
 2. Check `data/raw/` for existing Parquet files — the pipeline is incremental and will resume from the last timestamp
 3. Confirm which phase was last approved before continuing
-4. Current status: **Phase 2 complete, awaiting explicit approval before Phase 4 (Pine Script)**
+4. Current status: **All four phases complete — system end-to-end ready**
 
 The master prompt lives at [master-prompt.md](master-prompt.md).

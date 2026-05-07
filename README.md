@@ -226,12 +226,25 @@ backtest/
   performance.py         # Calmar, Sortino, Max Drawdown, benchmark
   backtester.py          # Orchestrator
   results/               # performance_matrix.csv + trade_log.csv (runtime)
+regime/
+  model.py               # Chronos-T5 forecaster wrapper
+  classifier.py          # Regime classification (Chronos + Hurst)
+  data_loader.py         # Parquet caching
+  router.py              # FastAPI routes
+tradingview/
+  lib_atr_mean_reversion.pine    # Pine v6 library (ATR, BB, R/S Hurst)
+  strategy_csp.pine              # Pine v6 strategy with Slack webhooks
+  README_TRADINGVIEW.md          # TradingView setup guide
 main.py                  # Data pipeline CLI
 main_backtest.py         # Backtest CLI
+main_regime.py           # Regime API entry point
+Dockerfile               # Regime API container (CPU-only torch)
+docker-compose.yml       # Regime API service
 .env                     # Your credentials (never committed)
 .env.example             # Credential reference (committed, no real keys)
 requirements.txt
 ARCHITECTURE.md          # Full system design doc
+AGENT_RUNBOOK.md         # Autonomous agent execution playbook
 ```
 
 ---
