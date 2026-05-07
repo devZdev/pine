@@ -47,6 +47,25 @@ Always safe to run — creates directories if they don't exist.
 
 ---
 
+## Phase 0 — Self-test
+
+**Run before touching ANY phase code.** The offline test suite verifies that
+the math primitives, parquet round-trip, signal generators, simulator, and
+regime classifier all behave correctly without needing API keys, network, or
+the Chronos model download.
+
+```bash
+./run_tests.sh fast        # ~3 s — sanity check on every change
+./run_tests.sh             # ~2 min — full suite incl. slow Hurst tests
+./run_tests.sh phase1      # narrow scope when iterating on the pipeline
+./run_tests.sh coverage    # writes htmlcov/index.html
+```
+
+If any test fails after a code change, stop and investigate before continuing
+into the production phases.
+
+---
+
 ## Phase 1 — Data ingestion
 
 **Run when:** First time, or to update data with new candles since the last run.

@@ -217,6 +217,45 @@ Requires TradingView **Pro+ tier** for webhook URLs and unlimited alerts.
 
 ---
 
+## Testing
+
+The repo ships with an **offline** test suite that requires no API keys, no
+network access, no Chronos download, and no TradingView account. It exercises
+every algorithmically interesting module across all four phases.
+
+```bash
+./run_tests.sh            # full suite (~2 min — runs the slow Hurst tests)
+./run_tests.sh fast       # skip slow tests (~3 s, stops on first failure)
+./run_tests.sh phase1     # only pipeline tests
+./run_tests.sh phase2     # only regime API/classifier tests
+./run_tests.sh phase3     # only backtest math tests
+./run_tests.sh phase4     # only Pine Script static checks
+./run_tests.sh smoke      # only the integration smoke test
+./run_tests.sh coverage   # generate HTML coverage in htmlcov/
+./run_tests.sh -v         # verbose
+```
+
+| Phase | Module(s) covered                                              | Test file                       |
+|-------|----------------------------------------------------------------|---------------------------------|
+| 1     | ATR, SMA, Bollinger, Hurst DFA                                 | `tests/test_features.py`        |
+| 1     | Gap fill, rate limiter, async retry, timeframe map             | `tests/test_pipeline_utils.py`  |
+| 1     | Parquet save/load + snappy compression                         | `tests/test_storage.py`         |
+| 2     | `classify_regime` pure function (all branches + confidence)    | `tests/test_classifier.py`      |
+| 2     | `DataStore` cache, `get_latest_*` helpers                      | `tests/test_data_loader.py`     |
+| 2     | FastAPI `/health`, `/symbols`, `/regime`, `/refresh` w/ mock   | `tests/test_api.py`             |
+| 3     | Black-Scholes pricing/delta, strike solver, realised vol        | `tests/test_options_math.py`    |
+| 3     | Kelly fraction, position sizing, contract count                 | `tests/test_kelly.py`           |
+| 3     | Entry/exit signals, ATR stop, look-ahead guard                  | `tests/test_signals.py`         |
+| 3     | Trade simulator, equity curve, portfolio combination            | `tests/test_simulator.py`       |
+| 3     | Sharpe / Sortino / Calmar / MDD / Buy-and-Hold benchmark        | `tests/test_performance.py`     |
+| 4     | Pine v6 directive, deprecated-API checks, alert JSON skeleton   | `tests/test_pine_static.py`     |
+| 1+2+3 | End-to-end synthetic 5,000-bar smoke flow                       | `tests/test_smoke.py`           |
+
+All tests are deterministic (seeded RNG), use temp directories for I/O, and run
+in under 60 seconds when slow tests are skipped.
+
+---
+
 ## Project Structure
 
 ```
