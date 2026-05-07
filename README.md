@@ -40,7 +40,8 @@ Open `.env` and substitute your keys. The file is in `.gitignore` and will never
 | `ALPACA_API_KEY` | [alpaca.markets](https://alpaca.markets) | Phase 1 — TSLA data | Free |
 | `ALPACA_SECRET_KEY` | Same page | Phase 1 — TSLA data | Free |
 | `HUGGINGFACE_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) | Phase 2 — Black Box engine | Free |
-| `WEBHOOK_SECRET` | Any random string you create | Phase 4 — TradingView alerts | — |
+
+Phase 4 (TradingView) doesn't need an env var — the Slack webhook URL is configured directly in the TradingView alert UI, not stored in `.env`.
 
 **Coinbase note:** API keys use the Advanced Trade format: `organizations/<org-id>/apiKeys/<key-id>`. The secret is an EC private key beginning with `-----BEGIN EC PRIVATE KEY-----`.
 
@@ -148,49 +149,57 @@ python main_backtest.py --no-wfo --bb-pct 0.20 --hurst 0.45
 
 ---
 
-### Step 3 — Run the Black Box regime classifier *(coming — Phase 2)*
+### Step 3 — Run the Black Box regime classifier (Phase 2)
 
-**What it does:** Starts a lightweight FastAPI server on your machine that loads a pre-trained Hugging Face time series model (Amazon Chronos-T5 or Google TimesFM). The server exposes one endpoint: `GET /regime` — which returns `TRENDING` or `MEAN_REVERTING` based on the last N candles.
+**What it does:** A FastAPI service running in Docker that loads Amazon Chronos-T5 (CPU-only) and exposes `GET /regime?symbol=BTC` — returning `TRENDING` or `MEAN_REVERTING` plus a confidence score and 10-bar forecast range.
 
-**Why it matters:** The Glass Box signal tells you *where* price is (near a support band). The Black Box tells you *what the market is doing* at a macro level. You only want to sell puts when both agree: price is at a floor **and** the regime is mean-reverting. Stacking the two signals reduces false positives significantly.
+**Why it matters:** The Glass Box signal tells you *where* price is (near a support band). The Black Box tells you *what the market is doing* at a macro level. Stacking both signals reduces false positives significantly. The Pine Script also runs its own R/S Hurst check on-chart, and you cross-reference its output against this API for confidence before manually executing.
 
-**What you get:** A local API your TradingView webhook bridge (Phase 4) can query before deciding to fire an alert.
+**What you get:** A local HTTP service at `http://localhost:8000` that you can query any time.
 
 ```bash
-# Not yet built — will be:
-python main_regime.py  # starts FastAPI on http://localhost:8000
+# First run — builds image, downloads torch CPU + model weights (~5–10 min)
+docker compose up --build
+
+# Subsequent starts (model is cached)
+docker compose up -d
+
+# Query
+curl "http://localhost:8000/regime?symbol=BTC"
 ```
 
 ---
 
-### Step 4 — Trade from TradingView *(coming — Phase 4)*
+### Step 4 — Trade from TradingView (Phase 4)
 
-**What it does:** Two Pine Script v6 files get added to TradingView:
-1. A **library script** — reusable functions for the ATR trailing stop and mean reversion bands. Publish this once to your TradingView account.
-2. A **strategy script** — imports the library, implements the Glass Box entry/exit logic, and fires a webhook alert whenever conditions are met.
+**What it does:** Two Pine Script v6 files load into TradingView:
+1. A **library script** ([tradingview/lib_atr_mean_reversion.pine](tradingview/lib_atr_mean_reversion.pine)) — reusable ATR trailing stop, Bollinger Bands, R/S Hurst, regime label
+2. A **strategy script** ([tradingview/strategy_csp.pine](tradingview/strategy_csp.pine)) — imports the library, runs the Glass Box logic, fires Slack webhook alerts
 
-**Why it matters:** TradingView is where you actually watch your charts. The Pine Script runs in real time on live price data. When the strategy fires, it sends a JSON webhook payload to a URL you configure — that URL can route to a broker (Alpaca, IBKR, Tastytrade) or just notify you on your phone.
+**Why it matters:** TradingView watches the live tape; when the strategy fires, you get a Slack message in seconds with the strike hint, regime, ATR, and Bollinger %B — all formatted with Slack Block Kit so it's readable at a glance. You execute the put manually in your broker.
 
-**What you get:** A live alert that tells you: *"BTC is near a price floor, regime is mean-reverting, sell a put at this strike."*
+**What you get:** Slack alerts that look like this:
 
-The webhook payload looks like:
-```json
-{
-  "symbol": "BTCUSD",
-  "action": "SELL_PUT",
-  "strike_hint": "94250",
-  "expiry": "weekly",
-  "atr": "1832.4",
-  "regime": "MEAN_REVERTING",
-  "timestamp": "2026-05-06T14:32:00Z"
-}
+```
+📉 Sell Cash-Secured Put — BTCUSD
+
+Action: SELL_PUT          Symbol: BTCUSD
+Strike Hint: $94250.50    DTE: 30 days
+Delta Target: 0.20        Spot: $96120.25
+ATR: $1832.40             Regime: MEAN_REVERTING
+Hurst: 0.41               BB %B: 0.18
+
+Bar time: 2026-05-07 14:32 UTC | Strategy: Glass Box CSP
 ```
 
-**TradingView setup (when Phase 4 is built):**
-1. Open TradingView → Pine Script Editor → paste the library script → Publish to Account
-2. Open a new script → paste the strategy script → Add to Chart
-3. Click the alert bell → set condition to the strategy → set webhook URL to your server
-4. Fill in `WEBHOOK_SECRET` in your `.env` so the server can verify alerts are genuine
+**TradingView setup** (full guide at [tradingview/README_TRADINGVIEW.md](tradingview/README_TRADINGVIEW.md)):
+1. Pine Editor → paste `lib_atr_mean_reversion.pine` → **Publish Script** → **Publish to Account (Private)**
+2. New Pine Editor tab → paste `strategy_csp.pine` → replace `<USERNAME>` with your TradingView handle → **Add to Chart**
+3. Create a Slack incoming webhook at [api.slack.com/messaging/webhooks](https://api.slack.com/messaging/webhooks)
+4. Click the alert clock → Create Alert → Condition: strategy → **Any alert() call** → paste Slack webhook URL → leave message blank
+5. Pine's `alert()` populates the Block Kit JSON automatically
+
+Requires TradingView **Pro+ tier** for webhook URLs and unlimited alerts.
 
 ---
 
@@ -203,8 +212,8 @@ The webhook payload looks like:
 | 3 | `python main.py --symbols BTC TSLA --timeframes 1m 5m --start 2020-01-01` | 20–40 min | Run once, then incrementally |
 | 4 | `python main_backtest.py --no-wfo` | 5–10 min | Confirm metrics look reasonable |
 | 5 | `python main_backtest.py` | 30–60 min | Full WFO — lock in final parameters |
-| 6 | *(Phase 2)* `python main_regime.py` | 1 min | Keep running in background |
-| 7 | *(Phase 4)* Add Pine Scripts to TradingView | 10 min | Set alerts, go live |
+| 6 | `docker compose up -d` (regime API) | 5–10 min first build | Keep running in background |
+| 7 | Add Pine Scripts to TradingView, wire Slack webhook | 10 min | Set alerts, go live |
 
 ---
 
