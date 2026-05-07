@@ -73,15 +73,55 @@ hurst_dfa                        ← NaN for first 511 bars, and if --no-hurst
 
 ---
 
-## Phase 2 — Black Box Engine (planned)
+## Phase 2 — Black Box Engine (complete)
 
-Agent 2 will integrate **Amazon Chronos-T5** or **Google TimesFM** via the `transformers` library to produce:
+Agent 2 runs **Amazon Chronos-T5-tiny** (CPU-only) as a zero-shot time series forecaster, combined with the Phase 1 Hurst exponent to classify the current market regime.
 
-- Zero-shot forecast of the next 10 candles' expected range
-- A **Regime State** classifier: `TRENDING` vs `MEAN_REVERTING`
-- Exposed as a **FastAPI** endpoint that the execution engine queries in real time
+### Inference
+- Model: `amazon/chronos-t5-tiny` via `chronos-forecasting` (not AutoGluon — ~1 GB lighter)
+- Context: last 512 bars of `close` prices from the 5m Parquet
+- Forecast: 10-step ahead with quantiles [0.1, 0.5, 0.9], `num_samples=20`
+- CPU inference: ~2–4 seconds per request
 
-The Hurst exponent from Phase 1 feeds directly into regime detection: `hurst > 0.6` → trending, `hurst < 0.4` → mean-reverting, `0.4–0.6` → random walk.
+### Regime Classification
+Two signals combined:
+
+| Signal | Logic |
+|---|---|
+| Chronos spread | `mean(q90 - q10) / atr_14 > 1.5` → TRENDING |
+| Hurst exponent | `< 0.45` → MEAN_REVERTING, `> 0.55` → TRENDING |
+
+Confidence: `0.55 + 0.30*(both_agree) + 0.15*min(1, |hurst-0.5|/0.1)`
+
+### API Endpoints
+- `GET /regime?symbol=BTC&lookback=512` — regime + confidence + forecast range
+- `GET /health` — Docker healthcheck
+- `GET /symbols` — lists symbols with loaded data
+- `POST /refresh` — reloads Parquets from disk after a pipeline re-run
+
+### Deployment — Docker
+```bash
+# First run (downloads ~200MB torch CPU + model weights ~300MB — cached after)
+docker compose up --build
+
+# Subsequent starts (uses cached model)
+docker compose up
+
+# Query
+curl "http://localhost:8000/regime?symbol=BTC"
+```
+
+### Files
+```
+regime/
+  model.py         # ChronosForecaster wrapper, ForecastResult dataclass
+  classifier.py    # classify_regime(), Regime enum, RegimeResult dataclass
+  data_loader.py   # DataStore (load/cache/refresh), symbol → parquet mapping
+  router.py        # FastAPI routes, Pydantic response models
+main_regime.py     # FastAPI app, lifespan startup sequence
+Dockerfile         # python:3.11-slim, torch CPU-only, chronos-forecasting
+docker-compose.yml # mounts data/ + persistent HF model cache volume
+```
 
 ---
 
@@ -147,25 +187,38 @@ Requires Phase 1 parquets at `data/raw/BTC_USD_5m.parquet` and `data/raw/TSLA_5m
 
 ---
 
-## Phase 4 — TradingView Execution Layer (planned)
+## Phase 4 — TradingView Execution Layer (complete)
 
-Agent 4 delivers two Pine Script v6 files:
+Agent 4 delivers two Pine Script v6 files plus a setup guide:
 
-1. **`library()` script** — reusable ATR Trailing Stop and Mean Reversion band functions
-2. **`strategy()` script** — imports the library, implements entry/exit logic, fires webhook alerts
+1. **`tradingview/lib_atr_mean_reversion.pine`** — Pine library exporting:
+   - `atr_trailing_stop(length, multiplier)` — ratcheting Wilder ATR stop
+   - `bollinger_bands(length, mult, src)` — tuple `[upper, lower, percent_b]`
+   - `hurst_rs(length)` — R/S Hurst exponent (native Pine, no DFA)
+   - `regime_label(hurst, lower, upper)` — TRENDING / MEAN_REVERTING / NEUTRAL
 
-Webhook alert payload (JSON):
+2. **`tradingview/strategy_csp.pine`** — Glass Box strategy that imports the library, fires Slack webhook alerts on entry/exit, plots BB / SMA200 / ATR trail / regime HUD.
+
+3. **`tradingview/README_TRADINGVIEW.md`** — setup guide: publishing the library, replacing the `<USERNAME>` import placeholder, attaching to chart, creating Slack webhook, alert wiring, Pro+ plan note.
+
+### Slack webhook payload (Block Kit)
 ```json
 {
-  "symbol": "{{ticker}}",
-  "action": "SELL_PUT",
-  "strike_hint": "{{close}} * 0.95",
-  "expiry": "weekly",
-  "atr": "{{plot_0}}",
-  "regime": "MEAN_REVERTING",
-  "timestamp": "{{time}}"
+  "text": "🔔 SELL_PUT — BTCUSD",
+  "blocks": [
+    {"type": "header", "text": {"type": "plain_text", "text": "📉 Sell Cash-Secured Put — BTCUSD"}},
+    {"type": "section", "fields": [
+      {"type": "mrkdwn", "text": "*Strike Hint:*\n$94250.50"},
+      {"type": "mrkdwn", "text": "*Regime:*\nMEAN_REVERTING"},
+      {"type": "mrkdwn", "text": "*Hurst:*\n0.41"}
+    ]},
+    {"type": "context", "elements": [{"type": "mrkdwn", "text": "Bar time: 2026-05-07 14:32 UTC"}]}
+  ]
 }
 ```
+
+### Why R/S Hurst in Pine, not DFA
+Pine v6's array math is constrained — porting the 512-bar DFA from Phase 1 would be impractical. R/S is a single-window approximation: ~50 lines of native Pine, well-correlated with DFA for regime detection at the timescales the strategy trades. The Python research stack still uses DFA for backtesting accuracy.
 
 ---
 
@@ -185,6 +238,6 @@ If this session is interrupted, the next session should:
 1. Read this file to understand system state and conventions
 2. Check `data/raw/` for existing Parquet files — the pipeline is incremental and will resume from the last timestamp
 3. Confirm which phase was last approved before continuing
-4. Current status: **Phase 3 complete, awaiting explicit approval before Phase 2 (Black Box engine)**
+4. Current status: **All four phases complete — system end-to-end ready**
 
 The master prompt lives at [master-prompt.md](master-prompt.md).

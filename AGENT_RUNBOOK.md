@@ -94,11 +94,46 @@ All four files must report OK before proceeding. If any fail, re-run Phase 1 or 
 
 ## Phase 2 — Black Box regime classifier
 
-**Status: NOT YET BUILT.** This phase will be implemented in a future session.
+**Run when:** After Phase 1 data is confirmed present. Keep running in the background while using TradingView.
 
-**What to do now:** Skip this phase. The backtest and Pine Script will run without it. When Phase 2 is built, a `main_regime.py` file will appear in the repo root and this section will be updated with run instructions.
+### Pre-flight check
+```bash
+python -c "
+from dotenv import load_dotenv; import os; load_dotenv()
+token = os.getenv('HUGGINGFACE_TOKEN', '')
+print('FAIL: HUGGINGFACE_TOKEN missing or placeholder' if not token or 'YOUR_' in token else 'OK: HUGGINGFACE_TOKEN present')
+"
+```
 
-**Do not attempt to start a FastAPI server or run any AI model — that code does not exist yet.**
+### Command — Docker (recommended)
+```bash
+# First run: builds image, downloads torch CPU (~200MB) + model weights (~300MB)
+# Expect 5–10 min on first build. Model is cached — subsequent starts are fast.
+docker compose up --build
+
+# Subsequent starts
+docker compose up -d
+```
+
+### Command — local (no Docker)
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install chronos-forecasting
+python main_regime.py
+```
+
+### Gate check — do not proceed until this passes
+```bash
+curl -s http://localhost:8000/health | python -m json.tool
+```
+Must return `"loaded": true`. If `"loaded": false`, check Docker logs: `docker compose logs -f`.
+
+### Smoke test
+```bash
+curl -s "http://localhost:8000/regime?symbol=BTC" | python -m json.tool
+curl -s "http://localhost:8000/regime?symbol=TSLA" | python -m json.tool
+```
+Both must return a valid regime response with `regime` set to `TRENDING` or `MEAN_REVERTING`.
 
 ---
 
@@ -155,15 +190,22 @@ Both files must be present before proceeding.
 
 ---
 
-## Phase 4 — Pine Script generation
+## Phase 4 — Pine Script delivery
 
-**Status: NOT YET BUILT.** This phase will be implemented in a future session.
+**Status: BUILT.** Pine Script files are checked into `tradingview/` — they are the user's final deliverable. There is no Python runtime for this phase. The agent's job here is to **verify the files exist and are syntactically clean**, then point the user to the TradingView setup guide.
 
-**What to do now:** Skip execution. When Phase 4 is built, two files will appear:
-- `tradingview/lib_atr_mean_reversion.pine` — the reusable library script
-- `tradingview/strategy_csp.pine` — the strategy script that fires webhook alerts
+### Verification check
+```bash
+ls -la tradingview/lib_atr_mean_reversion.pine tradingview/strategy_csp.pine tradingview/README_TRADINGVIEW.md && \
+grep -c "^//@version=6" tradingview/lib_atr_mean_reversion.pine tradingview/strategy_csp.pine
+```
+Both files must report `1` for the `//@version=6` count. Missing files = report failure to user.
 
-This section will be updated with exact TradingView load instructions when those files exist.
+### Hand-off to user
+Tell the user:
+> Phase 4 deliverables are at `tradingview/`. Read `tradingview/README_TRADINGVIEW.md` for the full TradingView load procedure — publish the library script first, replace `<USERNAME>` in the strategy with your TradingView handle, then attach the strategy to a BTC or TSLA chart at 5m timeframe. Slack webhook setup is in the same file.
+
+**Do not attempt to load Pine Scripts yourself — only the user can do this through the TradingView UI.**
 
 ---
 
@@ -210,27 +252,37 @@ for path in ['backtest/results/performance_matrix.csv', 'backtest/results/trade_
 
 lines.append('')
 
-# Phase 2 / 4 status
+# Phase 2 status — running service, no on-disk artifacts
 lines.append('## Phase 2 — Black Box Regime Classifier')
-lines.append('- Status: Not yet built')
+import urllib.request, json as _json
+try:
+    with urllib.request.urlopen('http://localhost:8000/health', timeout=2) as r:
+        h = _json.loads(r.read())
+    lines.append(f'- Service: RUNNING — model {h.get(\"model\")}, loaded={h.get(\"loaded\")}')
+except Exception as e:
+    lines.append(f'- Service: NOT RUNNING (start with: docker compose up -d)')
+
 lines.append('')
 lines.append('## Phase 4 — Pine Script Files')
 pine_files = [
     'tradingview/lib_atr_mean_reversion.pine',
     'tradingview/strategy_csp.pine',
+    'tradingview/README_TRADINGVIEW.md',
 ]
 for path in pine_files:
     if os.path.exists(path):
         lines.append(f'- {path}: READY — load into TradingView Pine Script Editor')
     else:
-        lines.append(f'- {path}: Not yet built')
+        lines.append(f'- {path}: MISSING')
 
 lines.append('')
 lines.append('## Next steps for the user')
 lines.append('1. Review backtest/results/performance_matrix.csv — check Calmar and Sortino ratios')
 lines.append('2. Review backtest/results/trade_log.csv — inspect individual trades for sanity')
-lines.append('3. When Phase 4 is complete: open TradingView → Pine Editor → load each .pine file')
-lines.append('4. Set up webhook alert in TradingView pointing to your server URL + WEBHOOK_SECRET')
+lines.append('3. Confirm regime API responds: curl http://localhost:8000/regime?symbol=BTC')
+lines.append('4. Open TradingView → Pine Editor → publish lib_atr_mean_reversion.pine first')
+lines.append('5. Replace <USERNAME> in strategy_csp.pine, attach to BTC or TSLA 5m chart')
+lines.append('6. Create Slack incoming webhook → wire it into TradingView alert (see tradingview/README_TRADINGVIEW.md)')
 
 manifest = '\n'.join(lines)
 with open('ARTIFACT_MANIFEST.md', 'w') as f:
@@ -245,25 +297,28 @@ print('Saved to ARTIFACT_MANIFEST.md')
 
 ## How the Pine Script files get into TradingView
 
-*(This section applies once Phase 4 is built and the `.pine` files exist.)*
+The full step-by-step setup guide is at [tradingview/README_TRADINGVIEW.md](tradingview/README_TRADINGVIEW.md). Quick overview:
 
 **File 1 — Library script** (`tradingview/lib_atr_mean_reversion.pine`)
 1. Open TradingView → Pine Script Editor (bottom panel)
 2. Delete default content → paste the full contents of the library file
 3. Click **Publish Script** → choose **Publish to Account (Private)**
-4. Note the published library name — the strategy script imports it by this name
+4. Note your TradingView username — needed for the strategy import
 
 **File 2 — Strategy script** (`tradingview/strategy_csp.pine`)
 1. Open a new Pine Script Editor tab
 2. Paste the full contents of the strategy file
-3. Click **Add to Chart**
-4. The strategy will appear as an overlay on your BTC or TSLA chart
+3. Replace `<USERNAME>` in the import line with your TradingView handle
+4. Click **Add to Chart** on a BTC/USD or TSLA chart, 5m timeframe (matches the backtest)
+5. The strategy will overlay BB bands, SMA200, ATR trail, and a Hurst HUD
 
-**Setting up the webhook alert**
-1. Click the **Alert** (clock) icon → Create Alert
-2. Set Condition: select your strategy → "Order fills only"
-3. Set Webhook URL: `https://your-server.com/webhook?secret=YOUR_WEBHOOK_SECRET`
-4. The alert payload fires automatically when the strategy signals a put-selling opportunity
+**Setting up the Slack webhook alert**
+1. Create a Slack incoming webhook at [api.slack.com/messaging/webhooks](https://api.slack.com/messaging/webhooks) — copy the URL
+2. In TradingView: click the **Alert** (clock) icon → Create Alert
+3. Condition: select the strategy → **Any alert() call**
+4. Webhook URL: paste the Slack webhook URL
+5. Message: leave blank — Pine's `alert()` populates the body with Block Kit JSON
+6. The Slack message renders with a header, all signal fields, and a context line
 
 ---
 
@@ -273,7 +328,10 @@ print('Saved to ARTIFACT_MANIFEST.md')
 |---|---|
 | Phase 1 rate limit error (429) | Wait 60 seconds, re-run. The pipeline resumes from the last saved candle. |
 | Phase 1 missing candles warning | Expected for weekends (TSLA) and exchange downtime. Log the warning and continue. |
+| Phase 2 `loaded: false` on `/health` | Check `docker compose logs -f`. Most likely: missing `HUGGINGFACE_TOKEN` or first-time model download still running (give it 5 min). |
+| Phase 2 Docker build fails | Confirm Docker daemon is running. If torch CPU wheel download times out, retry — the download is large. |
 | Phase 3 negative OOS return | Stop. Report the full performance matrix. Do not proceed to TradingView with a losing strategy. |
+| Phase 4 `<USERNAME>` not replaced | The strategy will fail to compile in Pine Editor. Tell the user to substitute their TradingView handle in the import line. |
 | Any unhandled Python exception | Report the full traceback. Do not attempt to work around it — the user needs to see the real error. |
 | `.env` credentials rejected by API | Stop. Report which API returned an auth error. Do not retry more than twice. |
 
@@ -282,21 +340,24 @@ print('Saved to ARTIFACT_MANIFEST.md')
 ## Artifact checklist — what a successful run leaves behind
 
 ```
-data/raw/
-  BTC_USD_1m.parquet          ← Phase 1
-  BTC_USD_5m.parquet          ← Phase 1
-  TSLA_1m.parquet             ← Phase 1
-  TSLA_5m.parquet             ← Phase 1
+data/raw/                                  ← Phase 1
+  BTC_USD_1m.parquet
+  BTC_USD_5m.parquet
+  TSLA_1m.parquet
+  TSLA_5m.parquet
 
-backtest/results/
-  performance_matrix.csv      ← Phase 3
-  trade_log.csv               ← Phase 3
+backtest/results/                          ← Phase 3
+  performance_matrix.csv
+  trade_log.csv
 
-tradingview/                  ← Phase 4 (not yet built)
+http://localhost:8000/health               ← Phase 2 (running service, not a file)
+
+tradingview/                               ← Phase 4 (committed to repo)
   lib_atr_mean_reversion.pine
   strategy_csp.pine
+  README_TRADINGVIEW.md
 
-ARTIFACT_MANIFEST.md          ← generated by this runbook
+ARTIFACT_MANIFEST.md                       ← generated by this runbook
 ```
 
-The user's final deliverable is the two `.pine` files. Everything else is research infrastructure that supports and validates those files.
+The user's final deliverable is the two `.pine` files. The Phase 2 regime API runs in Docker on the user's machine; the Phase 1 parquets and Phase 3 backtest CSVs validate that the strategy has alpha before committing real capital.

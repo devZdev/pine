@@ -1,0 +1,17 @@
+services:
+  regime-api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data          # mounts local data/raw into container
+      - huggingface_cache:/root/.cache/huggingface   # persists model cache
+    env_file: .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  huggingface_cache:
