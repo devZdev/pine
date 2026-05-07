@@ -73,15 +73,55 @@ hurst_dfa                        ← NaN for first 511 bars, and if --no-hurst
 
 ---
 
-## Phase 2 — Black Box Engine (planned)
+## Phase 2 — Black Box Engine (complete)
 
-Agent 2 will integrate **Amazon Chronos-T5** or **Google TimesFM** via the `transformers` library to produce:
+Agent 2 runs **Amazon Chronos-T5-tiny** (CPU-only) as a zero-shot time series forecaster, combined with the Phase 1 Hurst exponent to classify the current market regime.
 
-- Zero-shot forecast of the next 10 candles' expected range
-- A **Regime State** classifier: `TRENDING` vs `MEAN_REVERTING`
-- Exposed as a **FastAPI** endpoint that the execution engine queries in real time
+### Inference
+- Model: `amazon/chronos-t5-tiny` via `chronos-forecasting` (not AutoGluon — ~1 GB lighter)
+- Context: last 512 bars of `close` prices from the 5m Parquet
+- Forecast: 10-step ahead with quantiles [0.1, 0.5, 0.9], `num_samples=20`
+- CPU inference: ~2–4 seconds per request
 
-The Hurst exponent from Phase 1 feeds directly into regime detection: `hurst > 0.6` → trending, `hurst < 0.4` → mean-reverting, `0.4–0.6` → random walk.
+### Regime Classification
+Two signals combined:
+
+| Signal | Logic |
+|---|---|
+| Chronos spread | `mean(q90 - q10) / atr_14 > 1.5` → TRENDING |
+| Hurst exponent | `< 0.45` → MEAN_REVERTING, `> 0.55` → TRENDING |
+
+Confidence: `0.55 + 0.30*(both_agree) + 0.15*min(1, |hurst-0.5|/0.1)`
+
+### API Endpoints
+- `GET /regime?symbol=BTC&lookback=512` — regime + confidence + forecast range
+- `GET /health` — Docker healthcheck
+- `GET /symbols` — lists symbols with loaded data
+- `POST /refresh` — reloads Parquets from disk after a pipeline re-run
+
+### Deployment — Docker
+```bash
+# First run (downloads ~200MB torch CPU + model weights ~300MB — cached after)
+docker compose up --build
+
+# Subsequent starts (uses cached model)
+docker compose up
+
+# Query
+curl "http://localhost:8000/regime?symbol=BTC"
+```
+
+### Files
+```
+regime/
+  model.py         # ChronosForecaster wrapper, ForecastResult dataclass
+  classifier.py    # classify_regime(), Regime enum, RegimeResult dataclass
+  data_loader.py   # DataStore (load/cache/refresh), symbol → parquet mapping
+  router.py        # FastAPI routes, Pydantic response models
+main_regime.py     # FastAPI app, lifespan startup sequence
+Dockerfile         # python:3.11-slim, torch CPU-only, chronos-forecasting
+docker-compose.yml # mounts data/ + persistent HF model cache volume
+```
 
 ---
 
@@ -185,6 +225,6 @@ If this session is interrupted, the next session should:
 1. Read this file to understand system state and conventions
 2. Check `data/raw/` for existing Parquet files — the pipeline is incremental and will resume from the last timestamp
 3. Confirm which phase was last approved before continuing
-4. Current status: **Phase 3 complete, awaiting explicit approval before Phase 2 (Black Box engine)**
+4. Current status: **Phase 2 complete, awaiting explicit approval before Phase 4 (Pine Script)**
 
 The master prompt lives at [master-prompt.md](master-prompt.md).

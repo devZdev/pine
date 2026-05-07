@@ -94,11 +94,46 @@ All four files must report OK before proceeding. If any fail, re-run Phase 1 or 
 
 ## Phase 2 — Black Box regime classifier
 
-**Status: NOT YET BUILT.** This phase will be implemented in a future session.
+**Run when:** After Phase 1 data is confirmed present. Keep running in the background while using TradingView.
 
-**What to do now:** Skip this phase. The backtest and Pine Script will run without it. When Phase 2 is built, a `main_regime.py` file will appear in the repo root and this section will be updated with run instructions.
+### Pre-flight check
+```bash
+python -c "
+from dotenv import load_dotenv; import os; load_dotenv()
+token = os.getenv('HUGGINGFACE_TOKEN', '')
+print('FAIL: HUGGINGFACE_TOKEN missing or placeholder' if not token or 'YOUR_' in token else 'OK: HUGGINGFACE_TOKEN present')
+"
+```
 
-**Do not attempt to start a FastAPI server or run any AI model — that code does not exist yet.**
+### Command — Docker (recommended)
+```bash
+# First run: builds image, downloads torch CPU (~200MB) + model weights (~300MB)
+# Expect 5–10 min on first build. Model is cached — subsequent starts are fast.
+docker compose up --build
+
+# Subsequent starts
+docker compose up -d
+```
+
+### Command — local (no Docker)
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install chronos-forecasting
+python main_regime.py
+```
+
+### Gate check — do not proceed until this passes
+```bash
+curl -s http://localhost:8000/health | python -m json.tool
+```
+Must return `"loaded": true`. If `"loaded": false`, check Docker logs: `docker compose logs -f`.
+
+### Smoke test
+```bash
+curl -s "http://localhost:8000/regime?symbol=BTC" | python -m json.tool
+curl -s "http://localhost:8000/regime?symbol=TSLA" | python -m json.tool
+```
+Both must return a valid regime response with `regime` set to `TRENDING` or `MEAN_REVERTING`.
 
 ---
 

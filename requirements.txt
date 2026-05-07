@@ -27,3 +27,15 @@ loguru>=0.7.2
 vectorbt>=0.26.0
 scipy>=1.12.0
 tabulate>=0.9.0
+
+# Phase 2 — Black Box regime API
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+transformers>=4.40.0
+# torch is installed separately in the Dockerfile with the CPU-only index URL
+# to avoid pulling the large CUDA build.  For local dev outside Docker you can
+# install it manually:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+accelerate>=0.30.0
+# chronos-forecasting is installed separately in the Dockerfile:
+#   pip install chronos-forecasting
