@@ -209,15 +209,35 @@ Requires TradingView **Pro+ tier** for webhook URLs and unlimited alerts.
 
 ### Recommended run order
 
-| # | Command | Time | Gate |
-|---|---|---|---|
-| 1 | `pip install -r requirements.txt` | 2 min | Once |
-| 2 | Fill in `.env` with your API keys | 5 min | Once |
-| 3 | `python main.py --symbols BTC TSLA --timeframes 1m 5m --start 2020-01-01` | 20–40 min | Run once, then incrementally |
-| 4 | `python main_backtest.py --no-wfo` | 5–10 min | Confirm metrics look reasonable |
-| 5 | `python main_backtest.py` | 30–60 min | Full WFO — lock in final parameters |
-| 6 | `docker compose up -d` (regime API) | 5–10 min first build | Keep running in background |
-| 7 | Add Pine Scripts to TradingView, wire Slack webhook | 10 min | Set alerts, go live |
+This is the full sequence from a clean checkout to a live TradingView strategy. Steps 1–3 are one-time setup. Steps 4–6 you re-run whenever you want fresh signals.
+
+| # | Step | Command | Time | What to verify before moving on |
+|---|---|---|---|---|
+| 1 | **Install deps** | `pip install -r requirements.txt` | ~2 min | `pip list \| grep pytest` succeeds |
+| 2 | **Fill credentials** | Edit `.env` (see [credentials table](#2-configure-credentials)) | ~5 min | No `YOUR_..._HERE` placeholders left |
+| 3 | **Self-test** | `./run_tests.sh fast` | ~3 s | `103 passed` — clean baseline before touching production code |
+| 4 | **Backfill data** | `python main.py --symbols BTC TSLA --timeframes 1m 5m --start 2020-01-01` | 20–40 min first run, 1–3 min incremental | All four parquets exist in `data/raw/` with feature columns |
+| 5a | **Backtest (fast)** | `python main_backtest.py --no-wfo --bb-pct 0.20 --hurst 0.45` | 5–10 min | `backtest/results/performance_matrix.csv` has positive total return (or you stop and re-tune) |
+| 5b | **Backtest (full WFO)** | `python main_backtest.py` | 30–60 min | OOS Calmar > Buy & Hold Calmar — locks in final parameters |
+| 6 | **Start regime API** | `docker compose up -d` | 5–10 min first build, ~5 s after | `curl localhost:8000/health` returns `"loaded": true` |
+| 7 | **TradingView setup** | Follow [tradingview/README_TRADINGVIEW.md](tradingview/README_TRADINGVIEW.md) | ~10 min | First Slack message lands when a signal fires |
+
+#### Re-run cadence after initial setup
+
+| Frequency | What to run | Why |
+|---|---|---|
+| **Every commit (gated by CI)** | `./run_tests.sh fast` | Keeps the math layer green |
+| **Daily / weekly** | `python main.py --symbols BTC TSLA --timeframes 1m 5m` | Incremental data refresh — pulls only new candles since last run |
+| **After data refresh** | `curl -X POST http://localhost:8000/refresh` | Tells the regime API to reload parquets without restarting |
+| **Quarterly or after major regime shift** | `python main_backtest.py` | Re-verify the strategy still has alpha; re-tune `bb_pct` / `hurst_threshold` if needed |
+| **Continuous** | `docker compose up -d` keeps running | Pine alerts depend on regime API availability if you cross-reference it |
+
+#### Decision gates — when to stop and not proceed
+
+- **Step 4 fails repeatedly with auth errors**: stop, re-check `.env`. Do not loop on bad credentials.
+- **Step 5a shows negative returns on both IS and OOS**: stop. Don't run the full WFO. Re-examine the strategy parameters or the data quality before burning compute on optimization.
+- **Step 6 health check returns `"loaded": false`**: check `docker compose logs -f`. Most common cause: missing `HUGGINGFACE_TOKEN` or first-time model download still running.
+- **Step 7 Slack alert never fires**: temporarily lower `bb_pct_entry` to 0.50 in TradingView inputs to force a signal and confirm the webhook plumbing works, then revert.
 
 ---
 
