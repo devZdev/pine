@@ -1,0 +1,62 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same PR/branch — saves CI minutes.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Offline test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install torch (CPU-only)
+        # Pinned to the official CPU index to avoid pulling the large CUDA build.
+        # Mirrors the Dockerfile's install strategy — keeps CI parity with prod.
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install chronos-forecasting
+        # Matches the Dockerfile. Tests mock the forecaster, but we import the
+        # module so the dep must resolve.
+        run: pip install chronos-forecasting
+
+      - name: Install project dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run fast test suite
+        # ~3 seconds. Stops on first failure for fast feedback.
+        if: github.event_name == 'pull_request'
+        run: ./run_tests.sh fast
+
+      - name: Run full test suite
+        # ~2 minutes. Includes the slow Hurst-on-constructed-regimes tests
+        # and the end-to-end smoke test. Runs on pushes to main as a safety net.
+        if: github.event_name == 'push'
+        run: ./run_tests.sh
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-output
+          path: |
+            .pytest_cache/
+            htmlcov/
+          retention-days: 7
+          if-no-files-found: ignore

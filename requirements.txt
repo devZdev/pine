@@ -11,7 +11,11 @@ pyarrow>=15.0.0
 fastparquet>=2024.2.0       # fallback engine
 
 # Feature engineering
-nolds>=0.5.2                # Hurst / DFA
+# nolds 0.6.x has a real import bug — its data-file loader calls
+# importlib.resources.files() on the nolds.datasets *module* (not a package),
+# which raises TypeError on Python 3.11+. 0.5.2 uses pkg_resources and works.
+# Pin until upstream nolds fixes the loader.
+nolds>=0.5.2,<0.6           # Hurst / DFA
 
 # Environment & config
 python-dotenv>=1.0.0
