@@ -6,6 +6,35 @@ This document is written for an AI agent coming in cold. Read it completely befo
 
 ---
 
+## Execution sequence at a glance
+
+```
+Pre-flight       Phase 0       Phase 1          Phase 3          Phase 2          Phase 4
+──────────       ───────       ───────          ───────          ───────          ───────
+Python 3.11+     ./run_tests   python main.py   python           docker compose   tell user to
+deps installed   .sh fast      (BTC + TSLA      main_backtest    up -d            load .pine
+.env filled      (gate)        parquets)        (CSV results)    (regime API)     files via
+data/ exists                       │                 ▲                 ▲          tradingview/
+                                   │                 │                 │          README_TRADINGVIEW.md
+                                   └─────────────────┴─────────────────┘
+                                            depends on Phase 1 parquets
+```
+
+**Hard ordering rules:**
+- Phase 0 must pass before any other phase. A red baseline blocks everything.
+- Phase 1 must complete before Phase 2 or Phase 3 (both consume `data/raw/*.parquet`).
+- Phase 2 and Phase 3 can run in **either order** after Phase 1 — they're independent.
+- Phase 4 has no Python runtime — the agent verifies files exist and hands off to the user. Do not attempt to operate TradingView.
+
+**One-time vs repeatable:**
+- Pre-flight, Phase 0: every fresh checkout / before each session.
+- Phase 1: incremental — re-running only fetches new candles since last run.
+- Phase 3: re-run quarterly or after parameter tuning.
+- Phase 2: long-running service — start once, keep running.
+- Phase 4: one-time hand-off; user owns ongoing operation.
+
+---
+
 ## What you are doing
 
 You are running a quantitative trading research pipeline that ends with Pine Script v6 files the user loads directly into TradingView. Your job is to execute every phase in order, validate each output before moving on, and leave a clean set of artifacts. The user will not be watching — leave detailed logs and a final artifact manifest so they can pick up exactly where you left off.
