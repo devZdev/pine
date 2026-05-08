@@ -8,6 +8,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for a full explanation of design decision
 
 Looking for automated end-to-end execution? See [AGENT_RUNBOOK.md](AGENT_RUNBOOK.md) — a self-contained playbook written for an AI agent to run the full pipeline and leave TradingView-ready artifacts without human supervision.
 
+**Contributing or modifying this repo?** Read [gemini.md](gemini.md) first — it's the canonical engineering standards doc covering the two non-negotiable principles (documentation paramount, fast/high-quality test coverage paramount), Python and Pine Script style rules, and the commit/PR workflow. Refactoring code to make it testable is always in scope.
+
 ---
 
 ## Quick Start

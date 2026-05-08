@@ -2,6 +2,8 @@
 
 This document is written for an AI agent coming in cold. Read it completely before executing any step. Do not skip steps. Do not proceed past a gate check that fails — stop and report the failure with the exact error output.
 
+**Before modifying any code, read [`gemini.md`](gemini.md)** — the canonical engineering standards. The two non-negotiables: documentation must be updated alongside any behavior change, and the offline test suite (`./run_tests.sh`) must stay green and fast. If a piece of code is hard to test, refactor it — testability is always in scope.
+
 ---
 
 ## What you are doing
