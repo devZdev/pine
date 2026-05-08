@@ -222,6 +222,55 @@ Pine v6's array math is constrained — porting the 512-bar DFA from Phase 1 wou
 
 ---
 
+## Testing strategy
+
+The repository ships with an **offline** pytest suite (`tests/`) and a thin
+runner (`run_tests.sh`) that exercises every module that can be validated
+without external dependencies.
+
+**Verified offline (no creds, no network, no model download):**
+
+- All Phase 1 feature math: ATR (Wilder recursion + no look-ahead), SMA-200
+  boundary, Bollinger %B invariants, Hurst DFA on synthetic series with
+  known persistence (white noise / trending / mean-reverting via
+  controlled-autocorrelation log-returns).
+- Pipeline utilities: gap detection, forward-fill, async token-bucket
+  rate-limiting (real time measurement), exponential-backoff retry with
+  jitter, timeframe→pandas freq mapping, contiguous chunk_date_range.
+- Parquet round-trip with snappy compression (verified via
+  `pyarrow.parquet.ParquetFile.metadata`), tz-naive→UTC localisation, and
+  graceful handling of missing files.
+- Phase 2 `classify_regime` purely (every branch + the exact confidence
+  formula); `DataStore` cache, refresh, and `get_latest_*` helpers.
+- FastAPI routes (`/health`, `/symbols`, `/regime`, `/refresh`) via
+  `TestClient` with a deterministic `MockChronosForecaster` injected in
+  place of the real model.
+- Phase 3 Black-Scholes pricing, put delta, brentq strike solver round-trip,
+  realised vol on known-σ Brownian motion, half-Kelly textbook examples,
+  entry/exit signal generation (including look-ahead guard), simulator P&L
+  paths, and all performance metrics.
+- Phase 4 Pine Script static checks: `//@version=6` directive, no v4/v5
+  deprecated APIs (with negative-lookbehind for `str.tostring`), exactly one
+  `library(...)`/`strategy(...)`, `<USERNAME>` placeholder still present,
+  and JSON skeleton sanity for the alert payloads.
+- End-to-end smoke test that ingests synthetic OHLCV → features → parquet
+  → backtest → regime classification.
+
+**Cannot be tested offline (intentionally excluded):**
+
+- Live Coinbase/Alpaca ingestion (requires real credentials and network).
+- The actual Chronos-T5 model weights download and inference correctness
+  (we mock the forecaster — its quantile outputs are deterministic in tests).
+- Pine Script execution semantics (TradingView account / cloud runtime).
+- Wall-clock SLO assertions on the live regime API (covered by Docker
+  healthcheck in production, not unit tests).
+
+The `run_tests.sh` script provides phase-scoped runs (`phase1`..`phase4`,
+`smoke`, `fast`, `coverage`) so iterations stay tight while still catching
+regressions in unrelated modules.
+
+---
+
 ## Key Design Constraints
 
 - **No yfinance** — Alpaca and CCXT only

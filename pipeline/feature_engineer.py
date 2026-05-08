@@ -218,7 +218,11 @@ def compute_hurst_dfa(
         len(df), window,
     )
 
-    src: pd.Series = df[source_col].astype(float)
+    # DFA expects an "increment-like" series: applying DFA directly to raw
+    # prices (a random-walk-like cumulative series) gives H ≈ 1.5 for white
+    # noise instead of the canonical 0.5.  Convert to log-returns first so
+    # the Hurst exponent lands in the conventional [0, 1] range.
+    src: pd.Series = np.log(df[source_col].astype(float)).diff()
 
     hurst: pd.Series = src.rolling(window=window, min_periods=window).apply(
         _dfa_on_window,

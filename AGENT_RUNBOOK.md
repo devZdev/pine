@@ -2,6 +2,8 @@
 
 This document is written for an AI agent coming in cold. Read it completely before executing any step. Do not skip steps. Do not proceed past a gate check that fails — stop and report the failure with the exact error output.
 
+**Before modifying any code, read [`gemini.md`](gemini.md)** — the canonical engineering standards. The two non-negotiables: documentation must be updated alongside any behavior change, and the offline test suite (`./run_tests.sh`) must stay green and fast. If a piece of code is hard to test, refactor it — testability is always in scope.
+
 ---
 
 ## What you are doing
@@ -44,6 +46,25 @@ If any variable is missing or still contains a placeholder value, stop and tell 
 mkdir -p data/raw backtest/results
 ```
 Always safe to run — creates directories if they don't exist.
+
+---
+
+## Phase 0 — Self-test
+
+**Run before touching ANY phase code.** The offline test suite verifies that
+the math primitives, parquet round-trip, signal generators, simulator, and
+regime classifier all behave correctly without needing API keys, network, or
+the Chronos model download.
+
+```bash
+./run_tests.sh fast        # ~3 s — sanity check on every change
+./run_tests.sh             # ~2 min — full suite incl. slow Hurst tests
+./run_tests.sh phase1      # narrow scope when iterating on the pipeline
+./run_tests.sh coverage    # writes htmlcov/index.html
+```
+
+If any test fails after a code change, stop and investigate before continuing
+into the production phases.
 
 ---
 

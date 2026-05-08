@@ -244,8 +244,21 @@ def build_buyhold_benchmark(
     half = initial_portfolio / 2.0
 
     def _symbol_equity(df: pd.DataFrame, half_capital: float) -> pd.Series:
-        df = df[df.index >= pd.Timestamp(start_date)]
-        df = df[df.index <= pd.Timestamp(end_date)]
+        # Coerce comparison timestamps to match the DataFrame index timezone
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
+        idx_tz = getattr(df.index, "tz", None)
+        if idx_tz is not None:
+            if start_ts.tzinfo is None:
+                start_ts = start_ts.tz_localize(idx_tz)
+            else:
+                start_ts = start_ts.tz_convert(idx_tz)
+            if end_ts.tzinfo is None:
+                end_ts = end_ts.tz_localize(idx_tz)
+            else:
+                end_ts = end_ts.tz_convert(idx_tz)
+        df = df[df.index >= start_ts]
+        df = df[df.index <= end_ts]
         if df.empty:
             return pd.Series(dtype=float)
 
