@@ -12,6 +12,10 @@ fastparquet>=2024.2.0       # fallback engine
 
 # Feature engineering
 nolds>=0.5.2                # Hurst / DFA
+# nolds 0.6.x calls pkg_resources at import; in setuptools 81+ that path is
+# removed and the fallback hits a real importlib.resources bug. Pin to <81
+# until upstream nolds publishes a fix.
+setuptools<81
 
 # Environment & config
 python-dotenv>=1.0.0
