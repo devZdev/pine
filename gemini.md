@@ -24,7 +24,7 @@ When in doubt, link rather than duplicate. Specific runbook details belong in `A
 The repo ships with **108 offline tests that run in ~3 seconds in fast mode**. Every change must keep that property intact:
 
 - **No new code without tests.** Math primitives, signal generators, classifiers, API routes, and storage helpers all have direct unit coverage. Match that bar.
-- **No PR with red tests.** Run `./run_tests.sh fast` before every commit. Run `./run_tests.sh` (full, ~2 min) before every PR.
+- **No PR with red tests.** Run `./run_tests.sh fast` before every commit. Run `./run_tests.sh` (full, ~2 min) before every PR. CI runs the fast suite on every PR and the full suite on every push to `main` — see [.github/workflows/tests.yml](.github/workflows/tests.yml). A red CI blocks merge.
 - **Refactor freely to make code testable.** If logic is hard to test, the design is wrong — extract pure functions, inject dependencies, mock at boundaries. **Refactoring for testability is always in scope, never a "stretch goal."**
 - **Tests must be deterministic and fast.** Seed all random generators. Mock all network and slow I/O. The whole suite (full mode) must stay under a few minutes.
 - **Bugs found in production code while writing tests must be fixed**, not papered over with tests that match the broken behavior.

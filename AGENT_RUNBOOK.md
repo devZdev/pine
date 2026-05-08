@@ -66,6 +66,9 @@ the Chronos model download.
 If any test fails after a code change, stop and investigate before continuing
 into the production phases.
 
+The same suite runs in GitHub Actions ([.github/workflows/tests.yml](.github/workflows/tests.yml)) on
+every PR and push to `main`. If you open a PR, CI must be green before merge.
+
 ---
 
 ## Phase 1 — Data ingestion

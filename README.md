@@ -1,5 +1,7 @@
 # Hybrid Quant Trading System
 
+[![Tests](https://github.com/devZdev/pine/actions/workflows/tests.yml/badge.svg)](https://github.com/devZdev/pine/actions/workflows/tests.yml)
+
 Identifies high-probability price floors and volatility expansions in BTC and TSLA to optimize timing and strike selection for **selling cash-secured puts**.
 
 The system pits a deterministic Glass Box (ATR/math-based) model against a probabilistic Black Box (SOTA Hugging Face time series) model, with rigorous walk-forward backtesting and a TradingView execution layer.
